@@ -27,7 +27,7 @@ virtual void bondContractDetails( int reqId, const ContractDetails& contractDeta
 virtual void contractDetailsEnd( int reqId) = 0;
 virtual void execDetails( int reqId, const Contract& contract, const Execution& execution) =0;
 virtual void execDetailsEnd( int reqId) =0;
-virtual void error(const int id, const int errorCode, const IBString errorString) = 0;
+virtual void error(const int id, const int errorCode, const IBString errorMsg) = 0;
 virtual void updateMktDepth(TickerId id, int position, int operation, int side,
   double price, int size) = 0;
 virtual void updateMktDepthL2(TickerId id, int position, IBString marketMaker, int operation,
