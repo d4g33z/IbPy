@@ -28,7 +28,6 @@ from ib.ext.CommissionReport import CommissionReport
 from ib.ext.Contract import Contract
 from ib.ext.ContractDetails import ContractDetails
 from ib.ext.Execution import Execution
-from ib.ext.TickType import TickType
 from ib.ext.UnderComp import UnderComp
 from ib.ext.Order import Order
 from ib.ext.OrderState import OrderState
@@ -36,6 +35,38 @@ from ib.ext.OrderState import OrderState
 from ib.ext.ComboLeg import ComboLeg
 from ib.ext.OrderComboLeg import OrderComboLeg
 from ib.ext.ScannerSubscription import ScannerSubscription
+
+
+class IBContract(object):
+    def __new__(cls,**kwargs):
+        obj = Contract()
+        [setattr(obj,'m_'+k,v) for k,v in kwargs.items()]
+        return obj
+
+    def get_property(self,name):
+        return getattr(self,'m_'+name)
+
+class IBComboLeg(object):
+    def __new__(cls,**kwargs):
+        obj = ComboLeg()
+        [setattr(obj,'m_'+k,v) for k,v in kwargs.items()]
+        return obj
+
+    def get_property(self,name):
+        return getattr(self,'m_'+name)
+
+def IBObjectFactory(ibcls):
+    class IBGeneric(object):
+        _ibcls = ibcls
+        def __new__(cls,**kwargs):
+            obj = cls._ibcls()
+            [setattr(obj,'m_'+k,v) for k,v in kwargs.items()]
+            return obj
+
+        def get_property(self,name):
+            return getattr(self,'m_'+name)
+    #IBGeneric.__name__ = 'IB'+ibcls.__name__
+    return IBGeneric
 
 type_models = {
     'CommissionReport'  :CommissionReport,
@@ -65,11 +96,25 @@ def make_serializer(kls):
     ks = [x for x in filter(lambda x:'m_' in x,kls.__dict__.keys())]
     #summary attribute is a Contract type
     if kls is ContractDetails:
-        return lambda x:{k[2:]:getattr(x,k) if k[2:] != 'summary' else make_serializer(Contract)(getattr(x,k)) for k in ks}
+        return lambda x:{k[2:]:getattr(x,k) if k[2:] != 'summary' \
+            else make_serializer(Contract)(getattr(x,k)) for k in ks}
     elif kls is Contract: #why does it have an underComp attribute? What type is it?
-        return lambda x:{k[2:]:getattr(x,k) if k[2:] != 'comboLegs' else [make_serializer(ComboLeg)(y) for y in getattr(x,k)] for k in ks}
+        return lambda x:{k[2:]:getattr(x,k) if k[2:] != 'comboLegs' \
+            else [make_serializer(ComboLeg)(y) for y in getattr(x,k)] for k in ks}
     else:
         return lambda x:{k[2:]:getattr(x,k) for k in ks}
+
+def make_deserializer(kls):
+    ks = [x for x in filter(lambda x:'m_' in x,kls.__dict__.keys())]
+    #summary attribute is a Contract type
+    if kls is ContractDetails:
+        return lambda x:IBObjectFactory(kls)(**{k:v if k != 'summary' \
+            else make_deserializer(Contract)(**v) for k,v in x.items()})
+    elif kls is Contract: #why does it have an underComp attribute? What type is it?
+        return lambda x:IBObjectFactory(kls)(**{k:v if k != 'comboLegs' \
+            else [make_deserializer(ComboLeg)(y) for y in v] for k,v in x.items()})
+    else:
+        return lambda x:IBObjectFactory(kls)(**x)
 
 ELIOT_MESSAGE_TYPES = {}
 
@@ -98,7 +143,10 @@ for ew in ews:
     ELIOT_MESSAGE_TYPES[ew[0][0]] = \
             MessageType('ib_message',fields)
 
-__all__ = [ELIOT_MESSAGE_TYPES]
+from ib.opt import message
+ecs = [x for x in filter(lambda x:'_' not in x,message.__dict__.keys())]
+
+#__all__ = [IBContract,ELIOT_MESSAGE_TYPES,make_serializer]
 #example usage #notice the assignment!!!
 #import sys,json
 #def write_log(message):
