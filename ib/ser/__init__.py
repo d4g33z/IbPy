@@ -25,6 +25,11 @@ from ib.ext.OrderComboLeg       import OrderComboLeg
 from ib.ext.ScannerSubscription import ScannerSubscription
 from ib.ext.ExecutionFilter     import ExecutionFilter
 
+IBClasses = [
+    CommissionReport,Contract,ContractDetails,Execution,
+    UnderComp,Order,OrderState,ComboLeg,OrderComboLeg,
+    ScannerSubscription,ExecutionFilter]
+
 def IBObjectFactory(ibcls):
     class IBGeneric(object):
         _ibcls = ibcls
@@ -59,7 +64,6 @@ type_models = {
     'ComboLeg'          :ComboLeg,
     'OrderComboLeg'     :OrderComboLeg,
     'ScannerSubscription':ScannerSubscription,
-
 #from ECLIENT_DATA
     'ExecutionFilter'   :ExecutionFilter,
     'std::string'       :str,
