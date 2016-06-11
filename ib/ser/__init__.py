@@ -1,5 +1,5 @@
-from .ewrapper_data import EWRAPPERS as ews
-from .eclient_data import ECLIENTS as ecs
+from .ewrapper_data import  EWRAPPERS   as ews
+from .eclient_data  import  ECLIENTS    as ecs
 
 from copy import copy
 def flatten(x):
@@ -10,8 +10,12 @@ def flatten(x):
         if l: yield l.pop(0)
 
 #look at this to create type_models
-types_to_model = \
-    set([x for x in flatten([[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])
+from pprint import pformat
+def view_ib_types():
+    print(pformat(
+        set([x for x in filter(lambda x:x!='',
+            [x for x in flatten(
+            [[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])])))
 
 from ib.ext.CommissionReport    import CommissionReport
 from ib.ext.Contract            import Contract
@@ -37,7 +41,6 @@ def IBObjectFactory(ibcls):
             obj = cls._ibcls()
             [setattr(obj,'m_'+k,v) for k,v in kwargs.items()]
             return obj
-
         def get_property(self,name):
             return getattr(self,'m_'+name)
     return IBGeneric
@@ -60,7 +63,6 @@ type_models = {
     'faDataType'        :int,
     'int'               :int,
     'long'              :int,
-#potentially needed as attributes to be serializad
     'ComboLeg'          :ComboLeg,
     'OrderComboLeg'     :OrderComboLeg,
     'ScannerSubscription':ScannerSubscription,
@@ -71,7 +73,7 @@ type_models = {
 }
 
 def make_serializer(kls):
-    ks = [x for x in filter(lambda x:'m_' in x,kls.__dict__.keys())]
+    ks = [x for x in filter(lambda x:x[:2]=='m_',kls.__dict__.keys())]
     #summary attribute is a Contract type
     if kls is ContractDetails:
         return lambda x:{k[2:]:getattr(x,k) if k[2:] != 'summary' \
@@ -83,7 +85,7 @@ def make_serializer(kls):
         return lambda x:{k[2:]:getattr(x,k) for k in ks}
 
 def make_deserializer(kls):
-    ks = [x for x in filter(lambda x:'m_' in x,kls.__dict__.keys())]
+    ks = [x for x in filter(lambda x:x[:2]=='m_' in x,kls.__dict__.keys())]
     #summary attribute is a Contract type
     if kls is ContractDetails:
         return lambda x:IBObjectFactory(kls)(**{k:v if k != 'summary' \
@@ -93,4 +95,102 @@ def make_deserializer(kls):
             else [make_deserializer(ComboLeg)(y) for y in v] for k,v in x.items()})
     else:
         return lambda x:IBObjectFactory(kls)(**x)
+
+EWRAPPER_SERIALIZERS = {}
+for ew in ews:
+    sers = {}
+    for type_info in ew[1]:
+        if type_info != '':
+            try:
+                _,ib_type,argument = type_info.split(' ')
+            except ValueError:
+                ib_type,argument = type_info.split(' ')
+            if ib_type not in type_models.keys():
+                if ew[0][0] == 'openOrder':
+                    if argument != 'orderId': #orderId is ok
+                        ib_type = argument
+                        argument = argument[0].lower() + argument[1:]
+                else:
+                    print("{} is broken :-()".format(ew[0][0]))
+                    break
+            if ib_type in ['TickType','IBString','OrderId','TickerId','bool','double','faDataType','int','long']:
+               sers.update({argument:lambda x:x})
+            else:
+                sers.update({argument:make_serializer(type_models[ib_type])})
+
+    EWRAPPER_SERIALIZERS[ew[0][0]] = sers
+
+from inspect import Signature,Parameter
+ECLIENT_SIGNATURES = {}
+for ec in ecs:
+    parameters = []
+    for type_info in ec[1]:
+        if type_info != '':
+            try:
+                _,ib_type,argument = \
+                [x for x in filter(lambda x:x is not '',type_info.split(' '))]
+            except ValueError:
+                ib_type,argument = \
+                    [x for x in filter(lambda x:x is not '',type_info.split(' '))]
+            if ib_type not in type_models.keys():
+                if ec[0][0] == 'reqMktData':
+                    if argument == 'mktDataOptions': #ignore it
+                        continue
+                elif ec[0][0] == 'reqFundamentalData':
+                    if argument == 'Contract': #ignore it
+                        ib_type = argument
+                        argument = argument[0].lower() + argument[1:]
+                elif ec[0][0] == 'reqMktDepth':
+                    if argument == 'mktDepthOptions': #ignore it
+                        continue
+                elif ec[0][0] == 'reqHistoricalData':
+                    if argument == 'chartOptions': #ignore it
+                        continue
+                elif ec[0][0] == 'reqRealTimeBars':
+                    if argument == 'realTimeBarsOptions': #ignore it
+                        continue
+                elif ec[0][0] == 'reqScannerSubscription':
+                    if argument == 'scannerSubscriptionOptions': #ignore it
+                        continue
+                else:
+                    print("{} is broken now too:-()".format(ec[0][0]))
+                    break
+            parameters.append(Parameter(
+                argument,Parameter.POSITIONAL_OR_KEYWORD,annotation=type_models[ib_type]))
+
+    ECLIENT_SIGNATURES[ec[0][0]] = Signature(parameters)
+
+from ib.opt.connection import Connection
+from ib.opt import message
+def setup(clientId=0):
+    def _watch_factory(ewrapper):
+        #Can make this a MessageType later.
+        def _watch(msg):
+            for k,v in EWRAPPER_SERIALIZERS.get(ewrapper).items():
+                print('\n'+ewrapper+':\n\t'+pformat(v(getattr(msg,k))))
+        return _watch,getattr(message,ewrapper)
+
+    ibcon = Connection.create(clientId=clientId)
+    [ibcon.register(*_watch_factory(x)) \
+        if x in message.__dict__.keys() else None for x in EWRAPPER_SERIALIZERS.keys()]
+    ibcon.connect()
+
+    def _work(eclient_method, **arguments):
+        getattr(ibcon,eclient_method).__call__(
+            *[arguments.get(x) for x in map(lambda x:list(x).pop(0),
+                    getattr(message,eclient_method)().items())])
+
+    return _work
+
+def describe_ib_api():
+    for k,v in ECLIENT_SIGNATURES.items():
+        print('\n'+k+':\n\t'+pformat(str(v)))
+
+import sys,time
+def example(acctCode=None):
+    ibworker = setup(clientId=1)
+    ibworker('reqAccountUpdates',subscribe=True,acctCode=acctCode)
+    time.sleep(5)
+    ibworker('reqAccountUpdates',subscribe=False,acctCode=acctCode)
+
 
