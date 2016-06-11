@@ -9,13 +9,6 @@ def flatten(x):
             l[0:1] = l[0]
         if l: yield l.pop(0)
 
-#look at this to create type_models
-from pprint import pformat
-def view_ib_types():
-    print(pformat(
-        set([x for x in filter(lambda x:x!='',
-            [x for x in flatten(
-            [[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])])))
 
 from ib.ext.CommissionReport    import CommissionReport
 from ib.ext.Contract            import Contract
@@ -107,7 +100,7 @@ for ew in ews:
                 ib_type,argument = type_info.split(' ')
             if ib_type not in type_models.keys():
                 if ew[0][0] == 'openOrder':
-                    if argument != 'orderId': #orderId is ok
+                    if argument != 'orderId':
                         ib_type = argument
                         argument = argument[0].lower() + argument[1:]
                 else:
@@ -164,7 +157,6 @@ from ib.opt.connection import Connection
 from ib.opt import message
 def setup(clientId=0):
     def _watch_factory(ewrapper):
-        #Can make this a MessageType later.
         def _watch(msg):
             for k,v in EWRAPPER_SERIALIZERS.get(ewrapper).items():
                 print('\n'+ewrapper+':\n\t'+pformat(v(getattr(msg,k))))
@@ -182,9 +174,17 @@ def setup(clientId=0):
 
     return _work
 
+from pprint import pformat
 def describe_ib_api():
     for k,v in ECLIENT_SIGNATURES.items():
         print('\n'+k+':\n\t'+pformat(str(v)))
+        
+#look at this to create type_models
+def describe_ib_types():
+    print(pformat(
+        set([x for x in filter(lambda x:x!='',
+            [x for x in flatten(
+            [[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])])))
 
 import sys,time
 def example(acctCode=None):
