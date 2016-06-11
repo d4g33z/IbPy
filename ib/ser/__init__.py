@@ -200,10 +200,16 @@ def describe_ib_api(eclient_method=None):
 
 #look at this to create type_models
 def describe_ib_types():
-    print(json.dumps(
+    for ib_type in\
         set([x for x in filter(lambda x:x!='',
             [x for x in flatten(
-            [[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])]),indent=2))
+            [[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])]):
+        if ib_type in type_models.keys():
+            print("{0:24} \t\tmodeled by \t\t{1}".format(ib_type,str(type_models[ib_type])))
+        elif ib_type == 'const':
+            pass#not a type
+        else:
+            print("{0} may require a python object model unless we can ignore it".format(ib_type))
 
 import sys,time
 def example(acctCode,clientId=1):
