@@ -113,7 +113,11 @@ for ew in ews:
 
     EWRAPPER_SERIALIZERS[ew[0][0]] = sers
 
-from inspect import Signature,Parameter
+try:
+    from inspect import Signature,Parameter
+except ImportError:
+    from funcsigs import Signature,Parameter
+
 ECLIENT_SIGNATURES = {}
 for ec in ecs:
     parameters = []
@@ -155,11 +159,15 @@ for ec in ecs:
 
 from ib.opt.connection import Connection
 from ib.opt import message
+import json
 def setup(clientId=0):
     def _watch_factory(ewrapper):
         def _watch(msg):
             for k,v in EWRAPPER_SERIALIZERS.get(ewrapper).items():
-                print('\n'+ewrapper+':\n\t'+pformat(v(getattr(msg,k))))
+                try:
+                    print('\n'+ewrapper+':'+k+'\n'+json.dumps(v(getattr(msg,k)),indent=2))
+                except TypeError:
+                    print('\n'+ewrapper+':'+k+'\n'+"{0}".format(str(msg)))
         return _watch,getattr(message,ewrapper)
 
     ibcon = Connection.create(clientId=clientId)
@@ -168,29 +176,45 @@ def setup(clientId=0):
     ibcon.connect()
 
     def _work(eclient_method, **arguments):
-        getattr(ibcon,eclient_method).__call__(
-            *[arguments.get(x) for x in map(lambda x:list(x).pop(0),
-                    getattr(message,eclient_method)().items())])
-
+        #type check
+        assert all([type(arguments.get(x))==\
+            ECLIENT_SIGNATURES.get(eclient_method).parameters.get(x).annotation for x in arguments.keys()])
+        try:
+            getattr(ibcon,eclient_method).__call__(
+                *[arguments.get(x) for x in map(lambda x:list(x).pop(0),
+                        getattr(message,eclient_method)().items())])
+        except ConnectionResetError as e:
+            print("Connection Refused:\n"+e.strerror)
     return _work
 
-from pprint import pformat
-def describe_ib_api():
-    for k,v in ECLIENT_SIGNATURES.items():
-        print('\n'+k+':\n\t'+pformat(str(v)))
-        
+#-----------------------------------------------------------------------------------------------------------
+#simple api applications
+#-----------------------------------------------------------------------------------------------------------
+
+def describe_ib_api(eclient_method=None):
+    if not eclient_method:
+        for k,v in ECLIENT_SIGNATURES.items():
+            print('\n'+k+':\n'+str(v))
+    else:
+        print('\n'+eclient_method+':\n'+str(ECLIENT_SIGNATURES.get(eclient_method)))
+
 #look at this to create type_models
 def describe_ib_types():
-    print(pformat(
+    print(json.dumps(
         set([x for x in filter(lambda x:x!='',
             [x for x in flatten(
-            [[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])])))
+            [[x.split(' ')[:-1] for x in e[1]] for e in ews+ecs])])]),indent=2))
 
 import sys,time
-def example(acctCode=None):
-    ibworker = setup(clientId=1)
+def example(acctCode,clientId=1):
+    ibworker = setup(clientId=clientId)
+    #acctCode can be None, but let's be strict
     ibworker('reqAccountUpdates',subscribe=True,acctCode=acctCode)
     time.sleep(5)
-    ibworker('reqAccountUpdates',subscribe=False,acctCode=acctCode)
+    #example of type checking
+    try:
+        ibworker('reqAccountUpdates',subscribe=0,acctCode=acctCode)
+    except AssertionError:
+        ibworker('reqAccountUpdates',subscribe=False,acctCode=acctCode)
 
 
