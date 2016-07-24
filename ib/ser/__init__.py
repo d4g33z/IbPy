@@ -1,14 +1,19 @@
+import textwrap
+
 from .ewrapper_data import  EWRAPPERS   as ews
 from .eclient_data  import  ECLIENTS    as ecs
 
+from .eclient_docs  import  ECLIENT_DOCS
+from .ibclass_docs  import  IBCLASS_DOCS
+
 from copy import copy
+
 def flatten(x):
     l = copy(x)
     while l:
         while l and isinstance(l[0], list):
             l[0:1] = l[0]
         if l: yield l.pop(0)
-
 
 from ib.ext.CommissionReport    import CommissionReport
 from ib.ext.Contract            import Contract
@@ -27,13 +32,62 @@ IBClasses = [
     UnderComp,Order,OrderState,ComboLeg,OrderComboLeg,
     ScannerSubscription,ExecutionFilter]
 
+class IBDocStyler:
+    PURPLE      = '\033[95m'
+    CYAN        = '\033[96m'
+    DARKCYAN    = '\033[36m'
+    BLUE        = '\033[94m'
+    GREEN       = '\033[92m'
+    YELLOW      = '\033[93m'
+    RED         = '\033[91m'
+    BOLD        = '\033[1m'
+    UNDERLINE   = '\033[4m'
+    REVERSE     = '\033[7m'
+    BLINK       = '\033[5m'
+    END         = '\033[0m'
+    def __init__(self):
+        self.style = {
+                'ut':(self.UNDERLINE,self.PURPLE),
+                't':(self.BOLD,self.PURPLE),
+                'a':self.CYAN,
+                's':self.DARKCYAN,
+                'b':self.BOLD,
+                'v':'', #plain text
+                'f':self.BOLD,
+                'c':self.BOLD,
+                'q':self.BLUE,
+                'm':self.BOLD,
+                'y':self.GREEN,
+                'n':self.RED,
+                'x':self.YELLOW,}
+
+    def __call__(self,e,text):
+        colour = (self.style.get(e)) if type(self.style.get(e)) is not tuple else self.style.get(e)
+        return ''.join(colour)+text+self.END
+
+#can we add __doc__ info here?
 def IBObjectFactory(ibcls):
+    ds = IBDocStyler()
     class IBGeneric(object):
         _ibcls = ibcls
         def __new__(cls,**kwargs):
             obj = cls._ibcls()
             [setattr(obj,'m_'+k,v) for k,v in kwargs.items()]
+
+            docs = IBCLASS_DOCS.get(ibcls.__name__)
+            if docs:
+                params = docs.keys()
+                types = [docs.get(param)[0] for param in params]
+                params_strs = list(map(lambda x:textwrap.indent(
+                    '{1:s}:{0:s}'.format(*x),' '*2),
+                        zip(map(lambda x:ds('s',x),types),map(lambda x:ds('t',x),params))))
+
+                params_infos_strs = list(map(lambda x:textwrap.indent(x,'\t'),
+                    map(lambda x:textwrap.fill(docs.get(x)[1],40),params)))
+
+                obj.__doc__ = '\n'.join(map(lambda x:'\n'.join(x),zip(params_strs,params_infos_strs)))
             return obj
+
         def get_property(self,name):
             return getattr(self,'m_'+name)
     return IBGeneric
